@@ -11,3 +11,5 @@ members = [
 
 [dependencies]
 comedilib-sys = { path = "comedilib-sys" }
+failure = "0"
+num_enum = "0"
