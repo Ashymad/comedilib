@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn open_device_and_read_data() {
     let dev = Comedi::open(0).unwrap();
-    let _sample = dev.data_read(0, 0, 0, AREF::Ground).unwrap();
+    let _sample = dev.data_read(0, 0, 0, ARef::Ground).unwrap();
 }
 
 #[test]
@@ -20,6 +20,15 @@ fn convert_to_phys() {
     set_global_oor_behavior(OORBehavior::NaN);
     let range = dev.get_range(0, 0, 0).unwrap();
     let maxdata = dev.get_maxdata(0, 0).unwrap();
-    let sample = dev.data_read(0, 0, 0, AREF::Ground).unwrap();
-    to_phys(sample, &range, maxdata).expect(&format!("Value out of range [{}, {}]", range.min(), range.max()));
+    let sample = dev.data_read(0, 0, 0, ARef::Ground).unwrap();
+    let _unitstr = match range.unit() {
+        Unit::MiliAmper => "mA",
+        Unit::Volt => "V",
+        Unit::None => "",
+    };
+    to_phys(sample, &range, maxdata).expect(&format!(
+        "Value out of range [{}, {}]",
+        range.min(),
+        range.max()
+    ));
 }
