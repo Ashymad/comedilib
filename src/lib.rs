@@ -4,10 +4,10 @@ mod types;
 
 use comedilib_sys as ffi;
 use failure::{bail, Error};
+use std::convert::TryInto;
 use std::ffi::{CStr, CString};
 use std::marker::PhantomData;
-use std::os::raw::{c_uint, c_double};
-use std::convert::TryInto;
+use std::os::raw::{c_double, c_uint};
 pub use types::*;
 
 macro_rules! perror {
@@ -25,12 +25,22 @@ macro_rules! perror {
 macro_rules! getter {
     ($name:ident: $ty:ty) => {
         pub fn $name(&self) -> $ty {
+            self.ptr.$name
+        }
+    };
+    (unsafe $name:ident: $ty:ty) => {
+        pub fn $name(&self) -> $ty {
             unsafe { (*self.ptr).$name }
         }
     };
     ($name:ident: enum $ty:ty) => {
         pub fn $name(&self) -> $ty {
-            <$ty>::from_repr(unsafe { (*self.ptr).$name }).unwrap()
+            <$ty>::from_repr(self.ptr.$name).expect(&format!("Couldn't convert {} to enum of type {}", self.ptr.$name, stringify!($ty)))
+        }
+    };
+    (unsafe $name:ident: enum $ty:ty) => {
+        pub fn $name(&self) -> $ty {
+            unsafe { <$ty>::from_repr((*self.ptr).$name).expect(&format!("Couldn't convert {} to enum of type {}", (*self.ptr).$name, stringify!($ty))) }
         }
     };
     ($name:ident) => {
@@ -44,13 +54,14 @@ pub struct Range<'a> {
 }
 
 impl<'a> Range<'a> {
-    getter!(max: c_double);
-    getter!(min: c_double);
-    getter!(unit: enum Unit);
+    getter!(unsafe max: c_double);
+    getter!(unsafe min: c_double);
+    getter!(unsafe unit: enum Unit);
 }
 
 pub struct Cmd {
-    ptr: *mut ffi::comedi_cmd,
+    ptr: ffi::comedi_cmd,
+    chanlist: Vec<c_uint>,
 }
 
 impl Cmd {
@@ -65,44 +76,52 @@ impl Cmd {
     getter!(scan_end_arg);
     getter!(stop_src: enum StopTrigger);
     getter!(stop_arg);
-    pub fn set_subdev(&mut  self, subdev: c_uint) {
-        unsafe { (*self.ptr).subdev = subdev };
+    pub fn set_subdev(&mut self, subdev: c_uint) {
+        self.ptr.subdev = subdev;
     }
     pub fn set_start(&mut self, src: StartTrigger, arg: c_uint) {
-        unsafe {
-            (*self.ptr).start_src = src.repr();
-            (*self.ptr).start_arg = arg;
-        }
+        self.ptr.start_src = src.repr();
+        self.ptr.start_arg = arg;
     }
     pub fn set_scan_begin(&mut self, src: ScanBeginTrigger, arg: c_uint) {
-        unsafe {
-            (*self.ptr).scan_begin_src = src.repr();
-            (*self.ptr).scan_begin_arg = arg;
-        }
+        self.ptr.scan_begin_src = src.repr();
+        self.ptr.scan_begin_arg = arg;
     }
     pub fn set_convert(&mut self, src: ConvertTrigger, arg: c_uint) {
-        unsafe {
-            (*self.ptr).convert_src = src.repr();
-            (*self.ptr).convert_arg = arg;
-        }
+        self.ptr.convert_src = src.repr();
+        self.ptr.convert_arg = arg;
     }
     pub fn set_scan_end(&mut self, src: ScanEndTrigger, arg: c_uint) {
-        unsafe {
-            (*self.ptr).scan_end_src = src.repr();
-            (*self.ptr).scan_end_arg = arg;
-        }
+        self.ptr.scan_end_src = src.repr();
+        self.ptr.scan_end_arg = arg;
     }
     pub fn set_stop(&mut self, src: StopTrigger, arg: c_uint) {
-        unsafe {
-            (*self.ptr).stop_src = src.repr();
-            (*self.ptr).stop_arg = arg;
-        }
+        self.ptr.stop_src = src.repr();
+        self.ptr.stop_arg = arg;
     }
     pub fn set_chanlist(&mut self, chanlist: &[(c_uint, c_uint, ARef)]) {
-        let mut packed_chanlist: Vec<c_uint> = chanlist.iter().map(|(chan, rng, aref)| cr_pack(*chan, *rng, *aref)).collect();
-        unsafe {
-            (*self.ptr).chanlist = packed_chanlist.as_mut_ptr();
-            (*self.ptr).chanlist_len = packed_chanlist.len().try_into().unwrap();
+        self.chanlist = chanlist
+            .iter()
+            .map(|(chan, rng, aref)| cr_pack(*chan, *rng, *aref))
+            .collect();
+        self.ptr.chanlist = self.chanlist.as_mut_ptr();
+        self.ptr.chanlist_len = chanlist.len().try_into().unwrap();
+    }
+    pub fn chanlist(&self) -> Option<Vec<(c_uint, c_uint, ARef)>> {
+        if self.ptr.chanlist.is_null() {
+            None
+        } else {
+            Some(
+                unsafe {
+                    std::slice::from_raw_parts::<c_uint>(
+                        self.ptr.chanlist,
+                        self.ptr.chanlist_len.try_into().unwrap(),
+                    )
+                }
+                .iter()
+                .map(|cr| cr_unpack(*cr))
+                .collect(),
+            )
         }
     }
 }
@@ -158,6 +177,30 @@ impl Comedi {
         }
         Ok(maxdata)
     }
+    pub fn get_cmd_generic_timed(
+        &self,
+        subdevice: c_uint,
+        chanlist_len: c_uint,
+        scan_period_ns: c_uint,
+    ) -> Result<Cmd, Error> {
+        let mut cmd = Cmd {
+            ptr: unsafe { std::mem::zeroed::<ffi::comedi_cmd>() },
+            chanlist: Vec::new()
+        };
+        if unsafe {
+            ffi::comedi_get_cmd_generic_timed(
+                self.ptr,
+                subdevice,
+                &mut cmd.ptr,
+                chanlist_len,
+                scan_period_ns,
+            )
+        } < 0
+        {
+            perror!("comedi_get_cmd_generic_timed");
+        }
+        Ok(cmd)
+    }
 }
 
 pub fn to_phys(data: LSampl, range: &Range, maxdata: LSampl) -> Result<c_double, Error> {
@@ -169,7 +212,15 @@ pub fn to_phys(data: LSampl, range: &Range, maxdata: LSampl) -> Result<c_double,
 }
 
 fn cr_pack(chan: c_uint, rng: c_uint, aref: ARef) -> c_uint {
-    ((aref.repr() & 0x3) << 24) | ((rng & 0xff) << 16) | chan
+    ((aref.repr() & 0x3) << 24) | ((rng & 0xff) << 16) | (chan & 0xff)
+}
+
+fn cr_unpack(cr: c_uint) -> (c_uint, c_uint, ARef) {
+    (
+        cr & 0xff,
+        (cr >> 16) & 0xff,
+        ARef::from_repr((cr >> 24) & 0x3).unwrap(),
+    )
 }
 
 pub fn set_global_oor_behavior(behavior: OORBehavior) -> OORBehavior {

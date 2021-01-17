@@ -32,3 +32,58 @@ fn convert_to_phys() {
         range.max()
     ));
 }
+
+#[test]
+fn cr_pack_test() {
+    let chan1 = 3;
+    let packed = cr_pack(chan1, 13, ARef::Diff);
+    let (chan2, rng, aref) = cr_unpack(packed);
+    assert_eq!(chan1, chan2);
+    assert_eq!(13, rng);
+    assert_eq!(ARef::Diff, aref);
+}
+
+#[test]
+fn cmd_test() {
+    let comedi = Comedi::open(0).unwrap();
+    let mut cmd = comedi.get_cmd_generic_timed(0, 16, 1000).unwrap();
+    print_cmd(&cmd);
+    let chanlist = vec![(0, 0, ARef::Ground), (1, 1, ARef::Diff), (2, 2, ARef::Common)];
+    cmd.set_chanlist(&chanlist);
+    print_cmd(&cmd);
+    for ((chan1, rng1, aref1), (chan2, rng2, aref2)) in cmd.chanlist().unwrap().iter().zip(chanlist) {
+        assert_eq!(*chan1, chan2);
+        assert_eq!(*rng1, rng2);
+        assert_eq!(*aref1, aref2);
+    }
+}
+
+fn print_cmd(cmd: &Cmd) {
+    print!(
+        "Cmd {{\n  \
+        subdev: {},\n  \
+        start_src: {:?},\n  \
+        start_arg: {},\n  \
+        scan_begin_src: {:?},\n  \
+        scan_begin_arg: {},\n  \
+        convert_src: {:?},\n  \
+        convert_arg: {},\n  \
+        scan_end_src: {:?},\n  \
+        scan_end_arg: {},\n  \
+        stop_src: {:?},\n  \
+        stop_arg: {},\n  \
+        chanlist: {:?},\n}}\n",
+        cmd.subdev(),
+        cmd.start_src(),
+        cmd.start_arg(),
+        cmd.scan_begin_src(),
+        cmd.scan_begin_arg(),
+        cmd.convert_src(),
+        cmd.convert_arg(),
+        cmd.scan_end_src(),
+        cmd.scan_end_arg(),
+        cmd.stop_src(),
+        cmd.stop_arg(),
+        cmd.chanlist()
+    );
+}
