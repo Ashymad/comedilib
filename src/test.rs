@@ -57,9 +57,12 @@ fn cmd_test() {
     }
     loop {
         match comedi.command_test(&mut cmd).unwrap() {
-            CommandTestResult::Ok => break,
+            CommandTestResult::Ok => {
+                println!("Test succeeded!");
+                break;
+            },
             oth => {
-                print!("Test failed with: {:?}\n", oth);
+                println!("Test failed with: {:?}", oth);
                 print_cmd(&cmd);
             }
         };
@@ -67,7 +70,7 @@ fn cmd_test() {
 }
 
 fn print_cmd(cmd: &Cmd) {
-    print!(
+    println!(
         "Cmd {{\n  \
         subdev: {},\n  \
         start_src: {:?},\n  \
@@ -80,7 +83,7 @@ fn print_cmd(cmd: &Cmd) {
         scan_end_arg: {},\n  \
         stop_src: {:?},\n  \
         stop_arg: {},\n  \
-        chanlist: {:?},\n}}\n",
+        chanlist: {:?},\n}}",
         cmd.subdev(),
         cmd.start_src(),
         cmd.start_arg(),
