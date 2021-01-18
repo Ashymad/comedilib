@@ -46,15 +46,23 @@ fn cr_pack_test() {
 #[test]
 fn cmd_test() {
     let comedi = Comedi::open(0).unwrap();
-    let mut cmd = comedi.get_cmd_generic_timed(0, 16, 1000).unwrap();
-    print_cmd(&cmd);
-    let chanlist = vec![(0, 0, ARef::Ground), (1, 1, ARef::Diff), (2, 2, ARef::Common)];
+    let chanlist = vec![(0, 0, ARef::Ground), (1, 0, ARef::Ground)];
+    let mut cmd = comedi.get_cmd_generic_timed(0, chanlist.len().try_into().unwrap(), 1000).unwrap();
     cmd.set_chanlist(&chanlist);
     print_cmd(&cmd);
     for ((chan1, rng1, aref1), (chan2, rng2, aref2)) in cmd.chanlist().unwrap().iter().zip(chanlist) {
         assert_eq!(*chan1, chan2);
         assert_eq!(*rng1, rng2);
         assert_eq!(*aref1, aref2);
+    }
+    loop {
+        match comedi.command_test(&mut cmd).unwrap() {
+            CommandTestResult::Ok => break,
+            oth => {
+                print!("Test failed with: {:?}\n", oth);
+                print_cmd(&cmd);
+            }
+        };
     }
 }
 

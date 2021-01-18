@@ -201,6 +201,13 @@ impl Comedi {
         }
         Ok(cmd)
     }
+    pub fn command_test(&self, cmd: &mut Cmd) -> Result<CommandTestResult, Error> {
+        let ret = unsafe { ffi::comedi_command_test(self.ptr, &mut cmd.ptr) };
+        if ret < 0 {
+            perror!("comedi_command_test");
+        }
+        Ok(CommandTestResult::from_repr(ret).unwrap())
+    }
 }
 
 pub fn to_phys(data: LSampl, range: &Range, maxdata: LSampl) -> Result<c_double, Error> {

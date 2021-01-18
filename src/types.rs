@@ -1,6 +1,6 @@
 use comedilib_sys as ffi;
 use enum_repr::EnumRepr;
-use std::os::raw::c_uint;
+use std::os::raw::{c_uint, c_int};
 
 pub type LSampl = ffi::lsampl_t;
 pub type Sampl = ffi::lsampl_t;
@@ -71,3 +71,15 @@ pub enum StopTrigger {
     None = ffi::TRIG_NONE,
     Other = ffi::TRIG_OTHER,
 }
+
+#[EnumRepr(type = "c_int")]
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum CommandTestResult {
+    Ok = 0,
+    TriggerUnsupported = 1,
+    TriggerCombinationUnsupported = 2,
+    ArgumentOutOfRange = 3,
+    ArgumentRequiredAdjustment = 4,
+    ChanlistUnsupported = 5
+}
+
