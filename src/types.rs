@@ -1,9 +1,13 @@
 use comedilib_sys as ffi;
 use enum_repr::EnumRepr;
-use std::os::raw::{c_uint, c_int};
+use std::os::raw::{c_int, c_uint};
 
 pub type LSampl = ffi::lsampl_t;
-pub type Sampl = ffi::lsampl_t;
+pub type Sampl = ffi::sampl_t;
+
+pub trait SamplType {}
+impl SamplType for LSampl {}
+impl SamplType for Sampl {}
 
 #[EnumRepr(type = "c_uint")]
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -80,6 +84,5 @@ pub enum CommandTestResult {
     TriggerCombinationUnsupported = 2,
     ArgumentOutOfRange = 3,
     ArgumentRequiredAdjustment = 4,
-    ChanlistUnsupported = 5
+    ChanlistUnsupported = 5,
 }
-

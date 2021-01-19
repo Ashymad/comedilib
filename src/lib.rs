@@ -4,12 +4,11 @@ mod types;
 
 use comedilib_sys as ffi;
 use failure::{bail, Error};
+use std::cell::UnsafeCell;
 use std::convert::TryInto;
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_double, c_uint, c_int};
-use std::cell::UnsafeCell;
-use std::marker::PhantomData;
 use std::io::Read;
+use std::os::raw::{c_double, c_uint};
 pub use types::*;
 
 macro_rules! perror {
@@ -32,7 +31,13 @@ macro_rules! getter {
     };
     ($name:ident: enum $ty:ty) => {
         pub fn $name(&self) -> $ty {
-            unsafe { <$ty>::from_repr((*self.ptr.get()).$name).expect(&format!("Couldn't convert {} to enum of type {}", (*self.ptr.get()).$name, stringify!($ty))) }
+            unsafe {
+                <$ty>::from_repr((*self.ptr.get()).$name).expect(&format!(
+                    "Couldn't convert {} to enum of type {}",
+                    (*self.ptr.get()).$name,
+                    stringify!($ty)
+                ))
+            }
         }
     };
     (@ptr $name:ident: $ty:ty) => {
@@ -42,7 +47,13 @@ macro_rules! getter {
     };
     (@ptr $name:ident: enum $ty:ty) => {
         pub fn $name(&self) -> $ty {
-            unsafe { <$ty>::from_repr((*self.ptr).$name).expect(&format!("Couldn't convert {} to enum of type {}", (*self.ptr).$name, stringify!($ty))) }
+            unsafe {
+                <$ty>::from_repr((*self.ptr).$name).expect(&format!(
+                    "Couldn't convert {} to enum of type {}",
+                    (*self.ptr).$name,
+                    stringify!($ty)
+                ))
+            }
         }
     };
     ($name:ident) => {
@@ -50,15 +61,14 @@ macro_rules! getter {
     };
 }
 
-pub struct Range<'a> {
-    phantom: PhantomData<&'a ()>,
-    ptr: *mut ffi::comedi_range,
+pub struct Range {
+    ptr: UnsafeCell<ffi::comedi_range>,
 }
 
-impl<'a> Range<'a> {
-    getter!(@ptr max: c_double);
-    getter!(@ptr min: c_double);
-    getter!(@ptr unit: enum Unit);
+impl Range {
+    getter!(max: c_double);
+    getter!(min: c_double);
+    getter!(unit: enum Unit);
 }
 
 pub struct Cmd {
@@ -123,19 +133,19 @@ impl Cmd {
     }
     pub fn chanlist(&self) -> Option<Vec<(c_uint, c_uint, ARef)>> {
         unsafe {
-        if (*self.ptr.get()).chanlist.is_null() {
-            None
-        } else {
-            Some(
-                std::slice::from_raw_parts::<c_uint>(
-                    (*self.ptr.get()).chanlist,
-                    (*self.ptr.get()).chanlist_len.try_into().unwrap(),
+            if (*self.ptr.get()).chanlist.is_null() {
+                None
+            } else {
+                Some(
+                    std::slice::from_raw_parts::<c_uint>(
+                        (*self.ptr.get()).chanlist,
+                        (*self.ptr.get()).chanlist_len.try_into().unwrap(),
+                    )
+                    .iter()
+                    .map(|cr| cr_unpack(*cr))
+                    .collect(),
                 )
-                .iter()
-                .map(|cr| cr_unpack(*cr))
-                .collect(),
-            )
-        }
+            }
         }
     }
 }
@@ -154,7 +164,7 @@ impl Comedi {
         Ok(Comedi { ptr })
     }
     pub fn data_read(
-        &self,
+        &mut self,
         subdevice: c_uint,
         channel: c_uint,
         range: c_uint,
@@ -169,19 +179,18 @@ impl Comedi {
         }
         Ok(data)
     }
-    pub fn get_range<'a>(
-        &'a self,
+    pub fn get_range(
+        &self,
         subdevice: c_uint,
         channel: c_uint,
         range: c_uint,
-    ) -> Result<Range<'a>, Error> {
+    ) -> Result<Range, Error> {
         let ptr = unsafe { ffi::comedi_get_range(self.ptr, subdevice, channel, range) };
         if ptr.is_null() {
             perror!("comedi_get_range");
         }
         Ok(Range {
-            phantom: PhantomData,
-            ptr,
+            ptr: UnsafeCell::new(unsafe { *ptr }.clone()),
         })
     }
     pub fn get_maxdata(&self, subdevice: c_uint, channel: c_uint) -> Result<LSampl, Error> {
@@ -199,7 +208,7 @@ impl Comedi {
     ) -> Result<Cmd, Error> {
         let cmd = Cmd {
             ptr: unsafe { UnsafeCell::new(std::mem::zeroed::<ffi::comedi_cmd>()) },
-            chanlist: Vec::new()
+            chanlist: Vec::new(),
         };
         if unsafe {
             ffi::comedi_get_cmd_generic_timed(
@@ -222,19 +231,19 @@ impl Comedi {
         }
         Ok(CommandTestResult::from_repr(ret).unwrap())
     }
-    pub fn command(&self, cmd: &Cmd) -> Result<(), Error> {
+    pub fn command(&mut self, cmd: &Cmd) -> Result<(), Error> {
         let ret = unsafe { ffi::comedi_command(self.ptr, cmd.ptr.get()) };
         if ret < 0 {
             perror!("comedi_command");
         }
         Ok(())
     }
-    pub fn get_subdevice_flags(&self, subdevice: c_uint) -> Result<c_int, Error> {
+    pub fn get_subdevice_flags(&self, subdevice: c_uint) -> Result<c_uint, Error> {
         let ret = unsafe { ffi::comedi_get_subdevice_flags(self.ptr, subdevice) };
         if ret < 0 {
             perror!("comedi_get_subdevice_flags");
         }
-        Ok(ret)
+        Ok(ret.try_into().unwrap())
     }
     pub fn get_read_subdevice(&self) -> Option<c_uint> {
         let ret = unsafe { ffi::comedi_get_read_subdevice(self.ptr) };
@@ -244,18 +253,38 @@ impl Comedi {
             Some(ret.try_into().unwrap())
         }
     }
-    pub fn set_read_subdevice(&self, subdevice: c_uint) -> Result<(), Error> {
+    pub fn set_read_subdevice(&mut self, subdevice: c_uint) -> Result<(), Error> {
         let ret = unsafe { ffi::comedi_set_read_subdevice(self.ptr, subdevice) };
         if ret < 0 {
             perror!("comedi_set_read_subdevice");
         }
         Ok(())
     }
+    pub fn read_sampl<T>(&mut self, buf: &mut [T]) -> Result<usize, std::io::Error> where T: SamplType {
+        let ret = unsafe {
+            libc::read(
+                ffi::comedi_fileno(self.ptr),
+                buf.as_mut_ptr().cast(),
+                buf.len()*std::mem::size_of::<T>(),
+            )
+        };
+        if ret < 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(TryInto::<usize>::try_into(ret).unwrap()/std::mem::size_of::<T>())
+        }
+    }
 }
 
 impl Read for Comedi {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-        let ret = unsafe { libc::read(ffi::comedi_fileno(self.ptr), (buf as *mut [u8]).cast(), buf.len()) };
+        let ret = unsafe {
+            libc::read(
+                ffi::comedi_fileno(self.ptr),
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+            )
+        };
         if ret < 0 {
             Err(std::io::Error::last_os_error())
         } else {
@@ -265,7 +294,7 @@ impl Read for Comedi {
 }
 
 pub fn to_phys(data: LSampl, range: &Range, maxdata: LSampl) -> Result<c_double, Error> {
-    let phys = unsafe { ffi::comedi_to_phys(data, range.ptr, maxdata) };
+    let phys = unsafe { ffi::comedi_to_phys(data, range.ptr.get(), maxdata) };
     if phys == c_double::NAN {
         perror!("comedi_to_phys");
     }
