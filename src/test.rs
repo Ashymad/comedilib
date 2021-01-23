@@ -3,8 +3,13 @@ use comedilib_sys as sys;
 
 #[test]
 fn open_device_and_read_data() {
-    let mut dev = Comedi::open(0).unwrap();
-    let _sample = dev.data_read(0, 0, 0, ARef::Ground).unwrap();
+    let mut comedi = Comedi::open(0).unwrap();
+    comedi.data_read(0, 0, 0, ARef::Ground).unwrap();
+
+    let datalen = 10;
+    let mut data = vec![0; datalen];
+    comedi.data_read_n(0, 0, 0, ARef::Ground, &mut data).unwrap();
+    data.iter().for_each(|el| assert_ne!(*el, 0));
 }
 
 #[test]
@@ -49,7 +54,11 @@ fn cmd_test() {
     let subdevice = 0;
     let bufsz = 10000;
     let amount = 100;
-    let chanlist = vec![(0, 0, ARef::Ground), (1, 0, ARef::Ground), (2, 0, ARef::Ground)];
+    let chanlist = vec![
+        (0, 0, ARef::Ground),
+        (1, 0, ARef::Ground),
+        (2, 0, ARef::Ground),
+    ];
     let mut total = 0;
 
     let mut comedi = Comedi::open(0).unwrap();
@@ -58,7 +67,8 @@ fn cmd_test() {
         .unwrap();
     cmd.set_chanlist(&chanlist);
 
-    for ((chan1, rng1, aref1), (chan2, rng2, aref2)) in cmd.chanlist().unwrap().iter().zip(&chanlist)
+    for ((chan1, rng1, aref1), (chan2, rng2, aref2)) in
+        cmd.chanlist().unwrap().iter().zip(&chanlist)
     {
         assert_eq!(chan1, chan2);
         assert_eq!(rng1, rng2);
@@ -91,18 +101,22 @@ fn cmd_test() {
         let mut buf = vec![0; bufsz];
         loop {
             let read = comedi.read_sampl::<LSampl>(&mut buf).unwrap();
-            if read == 0 { break; }
+            if read == 0 {
+                break;
+            }
             total += read;
         }
     } else {
         let mut buf = vec![0; bufsz];
         loop {
             let read = comedi.read_sampl::<Sampl>(&mut buf).unwrap();
-            if read == 0 { break; }
+            if read == 0 {
+                break;
+            }
             total += read;
         }
     };
-    assert_eq!(total, chanlist.len()*amount as usize);
+    assert_eq!(total, chanlist.len() * amount as usize);
 }
 
 fn print_cmd(cmd: &Cmd) {

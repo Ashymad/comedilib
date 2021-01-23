@@ -9,6 +9,7 @@ use std::convert::TryInto;
 use std::ffi::{CStr, CString};
 use std::io::Read;
 use std::os::raw::{c_double, c_uint};
+use nix::fcntl::{flock, FlockArg};
 pub use types::*;
 
 macro_rules! perror {
@@ -35,22 +36,6 @@ macro_rules! getter {
                 <$ty>::from_repr((*self.ptr.get()).$name).expect(&format!(
                     "Couldn't convert {} to enum of type {}",
                     (*self.ptr.get()).$name,
-                    stringify!($ty)
-                ))
-            }
-        }
-    };
-    (@ptr $name:ident: $ty:ty) => {
-        pub fn $name(&self) -> $ty {
-            unsafe { (*self.ptr).$name }
-        }
-    };
-    (@ptr $name:ident: enum $ty:ty) => {
-        pub fn $name(&self) -> $ty {
-            unsafe {
-                <$ty>::from_repr((*self.ptr).$name).expect(&format!(
-                    "Couldn't convert {} to enum of type {}",
-                    (*self.ptr).$name,
                     stringify!($ty)
                 ))
             }
@@ -161,6 +146,7 @@ impl Comedi {
         if ptr.is_null() {
             perror!(format!("comedi_open({})", dev.into_string().unwrap()));
         }
+        flock(unsafe { ffi::comedi_fileno(ptr) }, FlockArg::LockExclusive)?;
         Ok(Comedi { ptr })
     }
     pub fn data_read(
@@ -178,6 +164,29 @@ impl Comedi {
             perror!("comedi_data_read");
         }
         Ok(data)
+    }
+    pub fn data_read_n(
+        &mut self,
+        subdevice: c_uint,
+        channel: c_uint,
+        range: c_uint,
+        aref: ARef,
+        data: &mut [LSampl],
+    ) -> Result<(), Error> {
+        if unsafe {
+            ffi::comedi_data_read_n(
+                self.ptr,
+                subdevice,
+                channel,
+                range,
+                aref.repr(),
+                data.as_mut_ptr(),
+                data.len().try_into().unwrap(),
+            )
+        } < 0 {
+            perror!("comedi_data_read_n");
+        }
+        Ok(())
     }
     pub fn get_range(
         &self,
@@ -260,18 +269,21 @@ impl Comedi {
         }
         Ok(())
     }
-    pub fn read_sampl<T>(&mut self, buf: &mut [T]) -> Result<usize, std::io::Error> where T: SamplType {
+    pub fn read_sampl<T>(&mut self, buf: &mut [T]) -> Result<usize, std::io::Error>
+    where
+        T: SamplType,
+    {
         let ret = unsafe {
             libc::read(
                 ffi::comedi_fileno(self.ptr),
                 buf.as_mut_ptr().cast(),
-                buf.len()*std::mem::size_of::<T>(),
+                buf.len() * std::mem::size_of::<T>(),
             )
         };
         if ret < 0 {
             Err(std::io::Error::last_os_error())
         } else {
-            Ok(TryInto::<usize>::try_into(ret).unwrap()/std::mem::size_of::<T>())
+            Ok(TryInto::<usize>::try_into(ret).unwrap() / std::mem::size_of::<T>())
         }
     }
 }

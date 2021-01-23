@@ -14,3 +14,4 @@ comedilib-sys = { path = "comedilib-sys" }
 failure = "0"
 enum-repr = "0"
 libc = "0"
+nix = "0"
