@@ -1,16 +1,18 @@
 #[cfg(test)]
 mod test;
 mod types;
+mod flags;
 
 use comedilib_sys as ffi;
 use failure::{bail, Error};
+use nix::fcntl::{flock, FlockArg};
 use std::cell::UnsafeCell;
 use std::convert::TryInto;
 use std::ffi::{CStr, CString};
 use std::io::Read;
 use std::os::raw::{c_double, c_uint};
-use nix::fcntl::{flock, FlockArg};
 pub use types::*;
+pub use flags::*;
 
 macro_rules! perror {
     ($str:expr) => {
@@ -183,7 +185,8 @@ impl Comedi {
                 data.as_mut_ptr(),
                 data.len().try_into().unwrap(),
             )
-        } < 0 {
+        } < 0
+        {
             perror!("comedi_data_read_n");
         }
         Ok(())
@@ -247,12 +250,12 @@ impl Comedi {
         }
         Ok(())
     }
-    pub fn get_subdevice_flags(&self, subdevice: c_uint) -> Result<c_uint, Error> {
+    pub fn get_subdevice_flags(&self, subdevice: c_uint) -> Result<SDF, Error> {
         let ret = unsafe { ffi::comedi_get_subdevice_flags(self.ptr, subdevice) };
         if ret < 0 {
             perror!("comedi_get_subdevice_flags");
         }
-        Ok(ret.try_into().unwrap())
+        Ok(SDF::new(ret.try_into().unwrap()))
     }
     pub fn get_read_subdevice(&self) -> Option<c_uint> {
         let ret = unsafe { ffi::comedi_get_read_subdevice(self.ptr) };

@@ -1,5 +1,5 @@
 use super::*;
-use comedilib_sys as sys;
+//use super::flags::Bitfield;
 
 #[test]
 fn open_device_and_read_data() {
@@ -8,7 +8,9 @@ fn open_device_and_read_data() {
 
     let datalen = 10;
     let mut data = vec![0; datalen];
-    comedi.data_read_n(0, 0, 0, ARef::Ground, &mut data).unwrap();
+    comedi
+        .data_read_n(0, 0, 0, ARef::Ground, &mut data)
+        .unwrap();
     data.iter().for_each(|el| assert_ne!(*el, 0));
 }
 
@@ -97,7 +99,7 @@ fn cmd_test() {
     let subdev_flags = comedi.get_subdevice_flags(subdevice).unwrap();
 
     comedi.command(&cmd).unwrap();
-    if (subdev_flags & sys::SDF_LSAMPL) != 0 {
+    if subdev_flags.is_set(SDF::LSAMPL) {
         let mut buf = vec![0; bufsz];
         loop {
             let read = comedi.read_sampl::<LSampl>(&mut buf).unwrap();
