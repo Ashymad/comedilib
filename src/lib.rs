@@ -272,6 +272,13 @@ impl Comedi {
         }
         Ok(())
     }
+    pub fn set_buffer_size(&mut self, subdevice: c_uint, size: c_uint) -> Result<c_uint, Error> {
+        let ret = unsafe { ffi::comedi_set_buffer_size(self.ptr, subdevice, size) };
+        if ret < 0 {
+            perror!("comedi_set_read_subdevice");
+        }
+        Ok(ret.try_into().unwrap())
+    }
     pub fn read_sampl<T>(&mut self, buf: &mut [T]) -> Result<usize, std::io::Error>
     where
         T: SamplType,
