@@ -20,6 +20,13 @@ pub enum ARef {
 
 #[EnumRepr(type = "c_uint")]
 #[derive(Copy, Clone, PartialEq, Debug)]
+pub enum IODirection {
+    Output = ffi::comedi_io_direction_COMEDI_OUTPUT,
+    Input = ffi::comedi_io_direction_COMEDI_INPUT,
+}
+
+#[EnumRepr(type = "c_uint")]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum OORBehavior {
     NaN = ffi::comedi_oor_behavior_COMEDI_OOR_NAN,
     Number = ffi::comedi_oor_behavior_COMEDI_OOR_NUMBER,
