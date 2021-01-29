@@ -283,6 +283,11 @@ impl Comedi {
             .try_into()
             .unwrap())
     }
+    pub fn get_buffer_read_count(&self, subdevice: c_uint) -> Result<c_uint, Error> {
+        let mut ret = 0;
+        ffi!(comedi_get_buffer_read_count(self.ptr, subdevice, &mut ret));
+        Ok(ret)
+    }
     pub fn get_driver_name<'a>(&'a self) -> Result<&'a str, Error> {
         let ptr = ffi!(comedi_get_driver_name(self.ptr).is_null());
         Ok(unsafe { CStr::from_ptr(ptr).to_str().unwrap() })
